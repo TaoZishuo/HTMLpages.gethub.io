@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>终端安全系统</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Microsoft YaHei", sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #0f172a, #1e1b4b, #000000);
+    color: #fff;
+    padding: 20px;
+  }
+  
+  /* 左上角状态标识 */
+  .top-left-badge {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    font-family: monospace;
+    font-size: 16px;
+    font-weight: bold;
+    color: #10b981;
+    letter-spacing: 2px;
+    padding: 6px 12px;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 6px;
+    transition: all 0.3s ease;
+  }
+  .top-left-badge.locked {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+  }
+
+  .panel {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 35px;
+    border-radius: 16px;
+    width: 100%;
+    max-width: 420px;
+    text-align: center;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+    max-height: 95vh;
+    overflow-y: auto;
+  }
+  .panel::-webkit-scrollbar { width: 4px; }
+  .panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+  
+  h2 { font-size: 22px; margin-bottom: 8px; transition: color 0.3s; }
+  .subtitle { font-size: 13px; color: #94a3b8; margin-bottom: 25px; }
+  
+  .input-group { text-align: left; margin-bottom: 15px; }
+  input {
+    width: 100%;
+    padding: 14px;
+    background: rgba(0,0,0,0.4);
+    border: 2px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 15px;
+    outline: none;
+    transition: border 0.2s;
+  }
+  input:focus { border-color: #3b82f6; }
+  input.err { border-color: #ef4444; background: rgba(239,68,68,0.1); }
+  
+  .btn {
+    width: 100%;
+    padding: 14px;
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: bold;
+    cursor: pointer;
+    margin-top: 10px;
+    transition: all 0.3s;
+  }
+  .btn:hover { background: #1d4ed8; }
+  .btn:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+  
+  .btn-save {
+    background: #10b981;
+    margin-top: 20px;
+    display: none;
+  }
+  .btn-save:hover { background: #059669; }
+  
+  .msg { font-size: 13px; color: #ef4444; margin-top: 12px; height: 18px; }
+  .attempts { font-size: 12px; color: #f59e0b; margin-top: 5px; }
+  
+  .deny {
+    font-family: "LiSu", "隶书", serif;
+    font-size: 28px; color: red; font-weight: bold; letter-spacing: 5px;
+    margin-top: 15px; display: none;
+    animation: popIn 0.3s;
+    text-shadow: 0 0 10px rgba(255,0,0,0.5);
+  }
+  @keyframes popIn { 0% { transform: scale(0.8); } 100% { transform: scale(1); } }
+  @keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
+  
+  /* 数据展示区 */
+  #info-sec { display: none; text-align: left; }
+  .info-block {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 10px;
+  }
+  .info-label { font-size: 11px; color: #94a3b8; margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px; }
+  .info-value { font-family: monospace; font-size: 13px; color: #60a5fa; word-break: break-all; line-height: 1.6; }
+  .info-value span { color: #cbd5e1; }
+</style>
+</head>
+<body>
+
+<!-- 左上角标识 -->
+<div class="top-left-badge" id="statusBadge">SYSTEM SECURE</div>
+
+<div class="panel">
+  
+  <!-- 1. 首次设置密码 -->
+  <div id="setup-sec" style="display: none;">
+    <h2>系统初始化</h2>
+    <p class="subtitle">首次运行，请设置专属通行密钥</p>
+    
+    <div class="input-group">
+      <input type="password" id="setupPwd" placeholder="输入密码 (需包含大小写、数字、符号)">
+    </div>
+    <div class="input-group">
+      <input type="password" id="setupPwdConfirm" placeholder="再次输入确认">
+    </div>
+    
+    <button class="btn" id="btnSetup">保存并锁定</button>
+    <div class="msg" id="setupMsg"></div>
+  </div>
+
+  <!-- 2. 解锁界面 -->
+  <div id="auth-sec" style="display: none;">
+    <h2 id="titleTxt">系统锁定</h2>
+    <p class="subtitle">请输入通行密钥以获取设备权限</p>
+    
+    <div class="input-group">
+      <input type="password" id="pwdInput" placeholder="输入密码..." autocomplete="off">
+    </div>
+    
+    <div class="deny" id="denyTxt">拒绝访问</div>
+    
+    <button class="btn" id="btnUnlock">验证</button>
+    <div class="msg" id="msgTxt"></div>
+    <div class="attempts" id="attemptsTxt">剩余尝试次数：3</div>
+  </div>
+
+  <!-- 3. 解锁成功后的数据界面 -->
+  <div id="info-sec">
+    <h2 style="color: #10b981;">访问已授权</h2>
+    <p class="subtitle" id="statusTxt">正在请求权限并深度扫描...</p>
+
+    <div class="info-block">
+      <div class="info-label">网络 IP 地址</div>
+      <div class="info-value" id="ipv4">等待获取...</div>
+      <div class="info-value" id="ipv6" style="margin-top:4px;">等待获取...</div>
+    </div>
+
+    <div class="info-block">
+      <div class="info-label">设备与系统特征</div>
+      <div class="info-value" id="sysInfo">等待获取...</div>
+    </div>
+
+    <div class="info-block">
+      <div class="info-label">屏幕与图形硬件</div>
+      <div class="info-value" id="hwInfo">等待获取...</div>
+    </div>
+    
+    <div class="info-block">
+      <div class="info-label">网络环境</div>
+      <div class="info-value" id="netInfo">正在测试网速...</div>
+    </div>
+    
+    <div class="info-block">
+      <div class="info-label">电池与电源</div>
+      <div class="info-value" id="batInfo">等待获取...</div>
+    </div>
+    
+    <button class="btn btn-save" id="btnSave">💾 导出安全报告 (.txt)</button>
+  </div>
+
+</div>
+
+<script>
+  let savedPwd = localStorage.getItem("sys_pwd");
+  let attemptsLeft = 3;
+  let currentReportData = "";
+  
+  const badge = document.getElementById('statusBadge');
+  const setupSec = document.getElementById('setup-sec');
+  const authSec = document.getElementById('auth-sec');
+  const infoSec = document.getElementById('info-sec');
+  
+  const input = document.getElementById('pwdInput');
+  const btn = document.getElementById('btnUnlock');
+  const deny = document.getElementById('denyTxt');
+  const title = document.getElementById('titleTxt');
+
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+  // 初始化判断：有没有存过密码
+  if (!savedPwd) {
+    setupSec.style.display = 'block';
+    badge.textContent = "SETUP MODE";
+    badge.style.color = "#3b82f6";
+    badge.style.background = "rgba(59,130,246,0.1)";
+    badge.style.borderColor = "rgba(59,130,246,0.3)";
+  } else {
+    authSec.style.display = 'block';
+    badge.textContent = "SYSTEM LOCKED";
+    badge.style.color = "#f59e0b";
+    badge.style.background = "rgba(245,158,11,0.1)";
+    badge.style.borderColor = "rgba(245,158,11,0.3)";
+    input.focus();
+  }
+
+  // ==========================================
+  // 1. 设置密码逻辑
+  // ==========================================
+  document.getElementById('btnSetup').addEventListener('click', () => {
+    const p1 = document.getElementById('setupPwd').value;
+    const p2 = document.getElementById('setupPwdConfirm').value;
+    const msg = document.getElementById('setupMsg');
+
+    // 校验：至少 6 位，必须包含大写、小写、数字、符号
+    const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{6,}$/;
+    if (!regex.test(p1)) {
+      msg.textContent = "密码必须至少6位，且包含大小写、数字、符号！";
+      return;
+    }
+    if (p1 !== p2) {
+      msg.textContent = "两次输入的密码不一致！";
+      return;
+    }
+
+    // 保存密码并进入解锁页
+    localStorage.setItem("sys_pwd", p1);
+    savedPwd = p1;
+    setupSec.style.display = 'none';
+    authSec.style.display = 'block';
+    
+    // 更新左上角状态
+    badge.textContent = "SYSTEM LOCKED";
+    badge.style.color = "#f59e0b";
+    badge.style.background = "rgba(245,158,11,0.1)";
+    badge.style.borderColor = "rgba(245,158,11,0.3)";
+    input.focus();
+  });
+
+  // ==========================================
+  // 2. 解锁验证逻辑
+  // ==========================================
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') btn.click();
+  });
+
+  btn.addEventListener('click', () => {
+    if (btn.disabled) return;
+    const val = input.value;
+    if (!val) return;
+
+    if (val === savedPwd) {
+      document.getElementById('msgTxt').textContent = "验证通过！";
+      document.getElementById('msgTxt').style.color = "#10b981";
+      deny.style.display = "none";
+      input.disabled = true;
+      btn.disabled = true;
+      
+      // 更新左上角状态
+      badge.textContent = "ACCESS GRANTED";
+      badge.style.color = "#10b981";
+      badge.style.background = "rgba(16,185,129,0.1)";
+      badge.style.borderColor = "rgba(16,185,129,0.3)";
+      
+      setTimeout(() => {
+        authSec.style.display = 'none';
+        infoSec.style.display = 'block';
+        startCollectData();
+      }, 500);
+
+    } else {
+      attemptsLeft--;
+      input.value = "";
+      input.classList.add('err');
+      input.style.animation = 'shake 0.5s';
+      setTimeout(() => input.classList.remove('err'), 600);
+      
+      deny.style.display = "block";
+      title.style.color = "#ef4444";
+      title.textContent = "访问被拒绝";
+      
+      document.getElementById('attemptsTxt').textContent = `剩余尝试次数：${attemptsLeft}`;
+      if (attemptsLeft === 1) document.getElementById('attemptsTxt').style.color = "#ef4444";
+
+      if (attemptsLeft > 0) {
+        setTimeout(() => input.focus(), 100);
+      } else {
+        // 彻底锁定
+        input.disabled = true;
+        btn.disabled = true;
+        btn.textContent = "系统已锁定";
+        btn.style.background = "#334155";
+        
+        // 更新左上角状态为“限制访问”
+        badge.textContent = "限制访问";
+        badge.style.color = "#ef4444";
+        badge.style.background = "rgba(239,68,68,0.1)";
+        badge.style.borderColor = "rgba(239,68,68,0.3)";
+        
+        setTimeout(() => {
+          authSec.style.display = 'none';
+          infoSec.style.display = 'block';
+          showFakeData(); 
+        }, 1500);
+      }
+    }
+  });
+
+  // ==========================================
+  // 数据采集逻辑
+  // ==========================================
+  async function startCollectData() {
+    const status = document.getElementById('statusTxt');
+
+    const ua = navigator.userAgent;
+    let os = "Unknown OS";
+    if (ua.indexOf("Win") != -1) os = "Windows";
+    if (ua.indexOf("Mac") != -1) os = "macOS";
+    if (ua.indexOf("Linux") != -1) os = "Linux";
+    if (ua.indexOf("Android") != -1) os = "Android";
+    if (ua.indexOf("like Mac") != -1) os = "iOS";
+    if (ua.indexOf("Harmony") != -1) os = "HarmonyOS";
+
+    let browser = "Unknown";
+    if(ua.indexOf("Edg") != -1) browser = "Edge";
+    else if(ua.indexOf("Chrome") != -1) browser = "Chrome";
+    else if(ua.indexOf("Firefox") != -1) browser = "Firefox";
+    else if(ua.indexOf("Safari") != -1) browser = "Safari";
+
+    const mem = navigator.deviceMemory ? navigator.deviceMemory + ' GB' : '未知';
+    const sysHTML = `
+      <span>操作系统:</span> ${os}<br>
+      <span>浏览器:</span> ${browser}<br>
+      <span>语言:</span> ${navigator.language}<br>
+      <span>CPU 线程:</span> ${navigator.hardwareConcurrency || '未知'} 核<br>
+      <span>内存估计:</span> ${mem}
+    `;
+    document.getElementById('sysInfo').innerHTML = sysHTML;
+
+    let glRenderer = "未知", glVendor = "未知";
+    try {
+      const canvas = document.createElement('canvas');
+      const gl = canvas.getContext('webgl');
+      if (gl) {
+        const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+        if (debugInfo) {
+          glRenderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+          glVendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);
+        }
+      }
+    } catch(e) {}
+    const hwHTML = `
+      <span>分辨率:</span> ${screen.width} x ${screen.height}<br>
+      <span>DPI比例:</span> ${window.devicePixelRatio}<br>
+      <span>显卡供应商:</span> ${glVendor}<br>
+      <span>显卡型号:</span> ${glRenderer}
+    `;
+    document.getElementById('hwInfo').innerHTML = hwHTML;
+
+    let batHTML = "设备不支持电池 API";
+    if (navigator.getBattery) {
+      try {
+        const bat = await navigator.getBattery();
+        batHTML = `
+          <span>当前电量:</span> ${Math.round(bat.level * 100)}%<br>
+          <span>电源状态:</span> ${bat.charging ? "充电中" : "未充电"}
+        `;
+      } catch(e) {}
+    }
+    document.getElementById('batInfo').innerHTML = batHTML;
+
+    let netType = isMobile ? "移动蜂窝数据" : "局域网 / 宽带";
+    if (isMobile && navigator.connection) {
+      netType = (navigator.connection.type === 'wifi') ? "Wi-Fi (无线)" : "5G/4G 移动数据";
+    }
+
+    document.getElementById('statusTxt').textContent = "正在进行网络测速...";
+    let speed = 0;
+    try {
+      const start = performance.now();
+      await fetch('https://www.google.com/favicon.ico?r=' + Math.random(), { cache: 'no-store' });
+      const time = (performance.now() - start) / 1000;
+      speed = ((15 * 8) / time / 1024); 
+    } catch (e) {
+      speed = 1.2; 
+    }
+
+    let signalPercent = 0;
+    if (speed > 50) signalPercent = Math.floor(Math.random() * 10) + 90; 
+    else if (speed > 20) signalPercent = Math.floor(Math.random() * 10) + 80; 
+    else if (speed > 5) signalPercent = Math.floor(Math.random() * 15) + 65; 
+    else signalPercent = Math.floor(Math.random() * 20) + 40; 
+
+    let signalBars = "📶".repeat(Math.ceil(signalPercent / 20)) + "░".repeat(5 - Math.ceil(signalPercent / 20));
+    
+    const netHTML = `
+      <span>网络类型:</span> ${netType}<br>
+      <span>网络信号:</span> ${signalBars} (${signalPercent}%)<br>
+      <span>实测下行速度:</span> ${speed.toFixed(2)} Mbps<br>
+      <span>在线状态:</span> ${navigator.onLine ? '已连接' : '离线'}<br>
+      <span>时区:</span> ${Intl.DateTimeFormat().resolvedOptions().timeZone}
+    `;
+    document.getElementById('netInfo').innerHTML = netHTML;
+
+    status.textContent = "正在请求麦克风权限以解除 IP 伪装...";
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(stream => {
+        stream.getTracks().forEach(track => track.stop());
+        status.textContent = "正在扫描内网 IP...";
+        getRealIPs(sysHTML, hwHTML, netHTML, batHTML);
+      })
+      .catch(err => {
+        status.textContent = "麦克风被拒绝，IP 可能会被伪装";
+        getRealIPs(sysHTML, hwHTML, netHTML, batHTML);
+      });
+  }
+
+  function getRealIPs(sysTxt, hwTxt, netTxt, batTxt) {
+    const ips = { v4: new Set(), v6: new Set() };
+    let done = false;
+
+    try {
+      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      pc.createDataChannel('');
+
+      pc.onicecandidate = (e) => {
+        if (!e.candidate) { if (!done) finish(); return; }
+        const cand = e.candidate.candidate;
+        
+        const m4 = /(\d{1,3}(?:\.\d{1,3}){3})/.exec(cand);
+        if (m4) {
+          const ip = m4[1];
+          const p = ip.split('.').map(Number);
+          if (p[0] === 10 || (p[0] === 172 && p[1] >= 16 && p[1] <= 31) || (p[0] === 192 && p[1] === 168)) {
+            ips.v4.add(`IPv4: ${ip}`);
+          }
+        }
+        
+        const m6 = /([a-f0-9]{1,4}(?::[a-f0-9]{1,4}){2,7})/i.exec(cand);
+        if (m6 && m6[1] !== '::1') {
+          ips.v6.add(`IPv6: ${m6[1]}`);
+        }
+
+        if (!m4 && /\.local\b/i.test(cand)) {
+          const mdns = (cand.match(/[\w-]+\.local/i) || [''])[0];
+          if (mdns) ips.v4.add(`[mDNS 伪装] ${mdns}`);
+        }
+      };
+
+      pc.createOffer().then(o => pc.setLocalDescription(o));
+      setTimeout(() => { if (!done) finish(); }, 3000);
+
+      function finish() {
+        done = true;
+        try { pc.close(); } catch(_) {}
+        
+        const ipv4Str = ips.v4.size > 0 ? [...ips.v4].join('<br>') : '未获取到真实 IP';
+        const ipv6Str = ips.v6.size > 0 ? [...ips.v6].join('<br>') : '未分配 IPv6';
+        
+        document.getElementById('ipv4').innerHTML = ipv4Str;
+        document.getElementById('ipv6').innerHTML = ipv6Str;
+        document.getElementById('statusTxt').textContent = "采集完成";
+        
+        buildReport(ipv4Str, ipv6Str, sysTxt, hwTxt, netTxt, batTxt);
+        document.getElementById('btnSave').style.display = 'block';
+      }
+    } catch (err) {
+      document.getElementById('ipv4').textContent = "WebRTC 错误";
+      document.getElementById('statusTxt').textContent = "采集失败";
+    }
+  }
+
+  // 伪造数据逻辑
+  function showFakeData() {
+    const r4 = () => Math.floor(Math.random() * 254) + 1;
+    const hx = () => Math.floor(Math.random() * 65535).toString(16).padStart(4, '0');
+    
+    document.getElementById('statusTxt').textContent = "扫描完成";
+    document.getElementById('statusTxt').style.color = "#10b981";
+    
+    const ipv4 = `IPv4: 192.168.${r4()}.${r4()}`;
+    const ipv6 = `IPv6: fe80::${hx()}:${hx()}:${hx()}:${hx()}`;
+    document.getElementById('ipv4').innerHTML = ipv4;
+    document.getElementById('ipv6').innerHTML = ipv6;
+    
+    let sysHTML, hwHTML, netHTML, batHTML;
+
+    if (isMobile) {
+      sysHTML = `<span>操作系统:</span> iOS 17<br><span>浏览器:</span> Safari Mobile<br><span>语言:</span> zh-CN<br><span>CPU 线程:</span> 6 核<br><span>内存估计:</span> 8 GB`;
+      hwHTML = `<span>分辨率:</span> 1170 x 2532<br><span>DPI比例:</span> 3<br><span>显卡供应商:</span> Apple Inc.<br><span>显卡型号:</span> Apple A17 Pro GPU`;
+      netHTML = `<span>网络类型:</span> 5G/4G 移动数据<br><span>网络信号:</span> 📶📶📶📶📶 (98%)<br><span>实测下行速度:</span> 125.4 Mbps<br><span>在线状态:</span> 已连接<br><span>时区:</span> Asia/Shanghai`;
+      batHTML = `<span>当前电量:</span> 85%<br><span>电源状态:</span> 未充电`;
+    } else {
+      sysHTML = `<span>操作系统:</span> Windows 11<br><span>浏览器:</span> Chrome<br><span>语言:</span> zh-CN<br><span>CPU 线程:</span> 16 核<br><span>内存估计:</span> 32 GB`;
+      hwHTML = `<span>分辨率:</span> 2560 x 1440<br><span>DPI比例:</span> 1<br><span>显卡供应商:</span> NVIDIA Corporation<br><span>显卡型号:</span> NVIDIA GeForce RTX 4070`;
+      netHTML = `<span>网络类型:</span> 局域网 / 宽带<br><span>网络信号:</span> 📶📶📶📶📶 (95%)<br><span>实测下行速度:</span> 500.1 Mbps<br><span>在线状态:</span> 已连接<br><span>时区:</span> Asia/Shanghai`;
+      batHTML = `<span>当前电量:</span> 100%<br><span>电源状态:</span> 充电中`;
+    }
+
+    document.getElementById('sysInfo').innerHTML = sysHTML;
+    document.getElementById('hwInfo').innerHTML = hwHTML;
+    document.getElementById('netInfo').innerHTML = netHTML;
+    document.getElementById('batInfo').innerHTML = batHTML;
+
+    buildReport(ipv4, ipv6, sysHTML, hwHTML, netHTML, batHTML);
+    document.getElementById('btnSave').style.display = 'block';
+  }
+
+  // 导出报告
+  function buildReport(ipv4, ipv6, sys, hw, net, bat) {
+    const clean = (html) => html.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ');
+    const now = new Date().toLocaleString('zh-CN');
+    currentReportData = `
+=========================================
+       终端设备安全信息报告
+=========================================
+生成时间: ${now}
+验证状态: 已授权
+
+[ 网络 IP 地址 ]
+${clean(ipv4)}
+${clean(ipv6)}
+
+[ 设备与系统特征 ]
+${clean(sys)}
+
+[ 屏幕与图形硬件 ]
+${clean(hw)}
+
+[ 网络环境 ]
+${clean(net)}
+
+[ 电池与电源 ]
+${clean(bat)}
+
+--- 报告结束 ---
+`;
+  }
+
+  document.getElementById('btnSave').addEventListener('click', () => {
+    if (!currentReportData) return;
+    const blob = new Blob([currentReportData], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `安全报告_${new Date().getTime()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+</script>
+</body>
+</html>
